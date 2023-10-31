@@ -3,52 +3,90 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"math/big"
+	"os"
 
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+
+	"github.com/urfave/cli/v2"
 )
 
-const ETHEREUM_ENDPOINT = "http://localhost:8545"
+const DEFAULT_ETHEREUM_ENDPOINT = "http://localhost:8545"
 
 func main() {
-	ec, err := ethclient.Dial(ETHEREUM_ENDPOINT)
-	if err != nil {
-		panic(err)
+	app := &cli.App{
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:  "optimism-portal-address",
+				Usage: "address of deployed optimism portal contract",
+			},
+			&cli.StringFlag{
+				Name:  "ethereum-endpoint",
+				Usage: "ethereum JSON-RPC endpoint",
+				Value: DEFAULT_ETHEREUM_ENDPOINT,
+			},
+			&cli.StringFlag{
+				Name:  "to",
+				Usage: "address to deposit to on L2; if empty, will send to the address of the private key",
+			},
+			&cli.StringFlag{
+				Name:  "private-key",
+				Usage: "private key of the account to send from",
+			},
+			&cli.Float64Flag{
+				Name:  "value",
+				Usage: "amount of ETH to deposit (in wei)",
+			},
+		},
+		Action: run,
 	}
 
-	optimismPortalAddress := common.HexToAddress("0xF87a0abe1b875489CA84ab1E4FE47A2bF52C7C64")
+	if err := app.Run(os.Args); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run(c *cli.Context) error {
+	fmt.Println("connecting to ethereum endpoint", c.String("ethereum-endpoint"))
+
+	ec, err := ethclient.Dial(c.String("ethereum-endpoint"))
+	if err != nil {
+		return fmt.Errorf("failed to dial ethereum endpoint: %w", err)
+	}
+
+	optimismPortalAddress := common.HexToAddress(c.String("optimism-portal-address"))
 	optimismPortal, err := bindings.NewOptimismPortal(optimismPortalAddress, ec)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("failed to create OptimismPortal bindings: %w", err)
 	}
 
-	to := common.HexToAddress("0xa0Ee7A142d267C1f36714E4a8F75612F20a79720") // anvil account 9
-	value := big.NewInt(0).Exp(big.NewInt(10), big.NewInt(16), nil)
+	to := common.HexToAddress(c.String("to")) // anvil account 9
+	valueF := new(big.Float).SetFloat64(c.Float64("value"))
+	valueF = new(big.Float).Mul(valueF, big.NewFloat(1e18))
+	value, _ := valueF.Int(nil)
 	gasLimit := uint64(21000) // minimumGasLimit = len(data) * 16 + 21000
 
-	privKey, err := crypto.HexToECDSA("2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6")
+	privKey, err := crypto.HexToECDSA(c.String("private-key"))
 	if err != nil {
-		panic(err)
-	}
-	senderAddr := crypto.PubkeyToAddress(privKey.PublicKey)
-	if senderAddr != to {
-		panic("senderAddr != to")
+		return fmt.Errorf("failed to create private key from flag: %w", err)
 	}
 
-	balance, err := ec.BalanceAt(context.Background(), to, nil)
+	senderAddr := crypto.PubkeyToAddress(privKey.PublicKey)
+	balance, err := ec.BalanceAt(context.Background(), senderAddr, nil)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("failed to get sender balance: %w", err)
 	}
 	fmt.Println("sender balance (wei)", balance)
 	fmt.Println("deposit value (wei)", value)
 
 	auth, err := bind.NewKeyedTransactorWithChainID(privKey, big.NewInt(31337))
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("failed to create transactor: %w", err)
 	}
 
 	tx, err := optimismPortal.DepositTransaction(&bind.TransactOpts{
@@ -60,7 +98,7 @@ func main() {
 		Context:  context.Background(),
 	}, to, value, gasLimit, false, []byte{})
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("failed to submit deposit transaction: %w", err)
 	}
 
 	for {
@@ -71,4 +109,6 @@ func main() {
 		fmt.Println("receipt", receipt)
 		break
 	}
+
+	return nil
 }
