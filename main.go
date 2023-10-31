@@ -65,10 +65,12 @@ func run(c *cli.Context) error {
 		return fmt.Errorf("failed to create OptimismPortal bindings: %w", err)
 	}
 
-	to := common.HexToAddress(c.String("to")) // anvil account 9
+	to := common.HexToAddress(c.String("to"))
 	valueF := new(big.Float).SetFloat64(c.Float64("value"))
 	valueF = new(big.Float).Mul(valueF, big.NewFloat(1e18))
 	value, _ := valueF.Int(nil)
+
+	// TODO: add data parameter
 	gasLimit := uint64(21000) // minimumGasLimit = len(data) * 16 + 21000
 
 	privKey, err := crypto.HexToECDSA(c.String("private-key"))
@@ -107,6 +109,11 @@ func run(c *cli.Context) error {
 			continue
 		}
 		fmt.Println("receipt", receipt)
+		if receipt.Status == 0 {
+			return fmt.Errorf("transaction failed")
+		}
+
+		fmt.Println("transaction succeeded!")
 		break
 	}
 
