@@ -40,7 +40,7 @@ func main() {
 			},
 			&cli.Float64Flag{
 				Name:  "value",
-				Usage: "amount of ETH to deposit (in wei)",
+				Usage: "amount of ETH to deposit",
 			},
 		},
 		Action: run,
