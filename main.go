@@ -65,7 +65,6 @@ func run(c *cli.Context) error {
 		return fmt.Errorf("failed to create OptimismPortal bindings: %w", err)
 	}
 
-	to := common.HexToAddress(c.String("to"))
 	valueF := new(big.Float).SetFloat64(c.Float64("value"))
 	valueF = new(big.Float).Mul(valueF, big.NewFloat(1e18))
 	value, _ := valueF.Int(nil)
@@ -79,10 +78,21 @@ func run(c *cli.Context) error {
 	}
 
 	senderAddr := crypto.PubkeyToAddress(privKey.PublicKey)
+
+	var to common.Address
+	if !c.IsSet("to") {
+		to = senderAddr
+	} else {
+		to = common.HexToAddress(c.String("to"))
+	}
+
 	balance, err := ec.BalanceAt(context.Background(), senderAddr, nil)
 	if err != nil {
 		return fmt.Errorf("failed to get sender balance: %w", err)
 	}
+
+	fmt.Println("sender address", senderAddr.Hex())
+	fmt.Println("to address", to.Hex())
 	fmt.Println("sender balance (wei)", balance)
 	fmt.Println("deposit value (wei)", value)
 
